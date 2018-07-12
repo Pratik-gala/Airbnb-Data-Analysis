@@ -1,0 +1,360 @@
+---
+title: "DataMining_Final project"
+author: "Pratik Gala"
+date: "17 May 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+getwd()
+setwd('D:\\Desktop\\as\\Data Mining')
+```
+
+#Reading the Dataset
+
+```{r}
+airbnb<-read.csv("listings_final.csv",header = T, na.strings = c("",NA,"N/A"))
+airbnb <- as.data.frame(airbnb)
+```
+
+#Initializing the libraries
+
+```{r}
+#install.packages("ggmap")
+#install.packages("maps")
+#install.packages("dplyr")
+#install.packages("Amelia")
+#install.packages("corrgram")
+#install.packages("caTools")
+#install.packages("caret")
+#install.packages("rpart")
+#install.packages("e1071")
+#install.packages("rminer")
+#install.packages("tidyverse")
+#install.packages("ggplot2")
+#install.packages("geosphere")
+#install.packages("sentimentr")
+#install.packages("tm")
+#install.packages("SnowballC")
+#install.packages("wordcloud")
+#install.packages("RColorBrewer")
+library(ggmap)
+library(maps)
+library(dplyr)
+library(Amelia)
+library(corrgram)
+library(caTools)
+library(caret)
+library(rpart)
+library(e1071)
+library(rminer)
+library(tidyverse)
+library(ggplot2)
+library(geosphere)
+library(sentimentr)
+library(tm) # for text mining
+library(SnowballC)  # for text stemming
+library(wordcloud)  # word-cloud generator 
+library(RColorBrewer)  # color palettes
+
+```
+
+#Data Preprocessing
+
+```{r}
+str(airbnb)
+
+airbnb$price <- as.numeric(airbnb$price)
+airbnb$id <- as.factor(airbnb$id)
+airbnb$host_id <- as.factor(airbnb$host_id)
+
+#finding missing values
+colSums(is.na(airbnb))
+missmap(airbnb,col = c('yellow','black'),legend = FALSE)
+```
+
+```{r}
+#The following columns will be removed because they had two many missing values :
+#Reviews per month : 756 missing values
+#Reviews scores location :822 missing values
+#Last reviews : 756 missing values
+#First reviews : 756 
+#Reviews scores values :821
+
+airbnb$reviews_per_month <- NULL
+airbnb$review_scores_location <- NULL
+airbnb$last_review <- NULL
+airbnb$first_review <- NULL
+airbnb$review_scores_value <- NULL
+airbnb$host_total_listings_count <- NULL
+airbnb$host_acceptance_rate <- NULL
+airbnb$host_response_rate <- NULL
+
+#Impute remaining missing values for variables of interest :
+airbnb$bedrooms[is.na(airbnb$bedrooms)] <- round(mean(airbnb$bedrooms, na.rm = TRUE))
+airbnb$bathrooms[is.na(airbnb$bathrooms)] <- round(mean(airbnb$bathrooms, na.rm = TRUE))
+airbnb$beds[is.na(airbnb$beds)] <- round(mean(airbnb$beds, na.rm = TRUE))
+
+### Mapping missing values again:
+missmap(airbnb,col = c('yellow','black'),legend = FALSE)
+
+```
+
+
+```{r}
+#MAPPING LISTINGS:
+
+mapdata<- as.data.frame(cbind(airbnb$longitude,airbnb$latitude,airbnb$price))
+#map <- get_map(location = "boston,Massachusetts",source = "google",zoom = 11,maptype = "terrain")
+map <- get_map(location = c(lon = -71.1, lat = 42.32),source = "google",zoom = 12,maptype = "terrain")
+mymap <- ggmap(map)+geom_point(aes(x=airbnb$longitude,y=airbnb$latitude,color=airbnb$property_type),data = mapdata)
+mymap
+
+```
+
+```{r}
+#EXPLORING PRICE :
+summary(airbnb)
+##########Price Distribuition
+boxplot(airbnb$price,main = "Price Boxplot",col = "gray")
+
+```
+
+```{r}
+#testing for outliers that could affect analysis:
+price.outliers <- boxplot.stats(airbnb$price) #returned 0 outliers
+price.outliers
+
+```
+
+```{r}
+##########listing By neighbrohood
+counts <- sort(table(airbnb$neighbourhood_cleansed),decreasing = T)
+counts
+barplot(counts,las=2,col = "blue",ylim = c(0,400),cex.names = 0.6,xpd = T,main = "Listings Per Neighborhood")
+
+```
+
+
+```{r}
+#########Price By Neighborhood
+average<-sort(with(airbnb,by(airbnb$price,airbnb$neighbourhood_cleansed,mean)),decreasing=T)
+average
+barplot(average,cex.names = 0.6,col = "blue",main = "Average Neighborhood Listing Price",las=2)
+abline(h=mean(airbnb$price),col="red")
+
+```
+
+#Average Price based on Room_type and Neighborhood_cleansed
+
+```{r}
+airbnb %>%
+  filter(price > 20) %>%
+  group_by(neighbourhood_cleansed, room_type) %>%
+  summarise(cost = mean(price), tot = n()) %>%
+ # filter(bedrooms == 1) %>%
+ # arrange(`zipcode`) %>%
+  ggplot() + geom_col(mapping = aes(x = `neighbourhood_cleansed`, y = `cost`, color = as.character(room_type))) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)
+) + labs(x = NULL) + facet_wrap(~ `room_type`,  nrow = 5) + 
+  theme(legend.position="none")
+
+```
+
+#Average Price based on bedrooms and Neighborhood_cleansed
+
+```{r}
+airbnb %>%
+  filter(price > 20) %>%
+  group_by(neighbourhood_cleansed, bedrooms) %>%
+  summarise(cost = mean(price), tot = n()) %>%
+ # filter(bedrooms == 1) %>%
+ # arrange(`zipcode`) %>%
+  ggplot() + geom_col(mapping = aes(x = `neighbourhood_cleansed`, y = `cost`, color = as.character(bedrooms))) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)
+) + labs(x = NULL) + facet_wrap(~ `bedrooms`,  nrow = 5) + 
+  theme(legend.position="none")
+```
+
+#EXPLORING SUPERHOST
+
+```{r}
+##########Count of super host(False VS True)
+head(airbnb$host_is_superhost)
+pl<-table(airbnb$host_is_superhost)
+pl
+```
+
+```{r}
+#MODEL BUILDING:
+#####Getting numeric columns and coding super host varible  :
+airbnb$host_is_superhost<-ifelse(airbnb$host_is_superhost=="f",0,1)
+numerics<-select_if(airbnb,is.numeric)
+head(numerics)
+
+airbnb$host_is_superhost <- as.factor(airbnb$host_is_superhost)
+```
+
+```{r}
+#Splitting numeric data:
+set.seed(100) #setting seed to make sure result do not change when re-running model.
+sample <- sample.split(numerics$host_is_superhost,SplitRatio = 0.7)
+train <- subset(numerics, sample == TRUE)
+test <- subset(numerics,sample == FALSE)
+
+###LOGISTIC REGRESSION
+
+log.model <- glm(train$host_is_superhost~.,data = train,family = "binomial")
+summary(log.model)
+logpred <-predict(log.model,newdata=test,type="response")
+#head(logpred)
+fitted.results <- ifelse(logpred> 0.5,1,0)
+head(fitted.results)
+misclasserror <- mean(fitted.results != test$host_is_superhost)
+accuracy<-  1-misclasserror
+accuracy
+
+```
+
+
+```{r}
+#Confusion Matrix
+cm.log<-table(test$host_is_superhost,logpred>0.5)
+cm.log
+```
+
+```{r}
+#Naive Bayes Model for categorical data:
+Factors <- airbnb[,c(5,9,19,20,25)] #predictors
+head(Factors)
+set.seed(100) #setting seed to make sure result do not change when re-running model.
+sample <- sample.split(Factors$host_is_superhost,SplitRatio = 0.7)
+train1 <- subset(Factors, sample == TRUE)
+test1 <- subset(Factors,sample == FALSE)
+
+```
+
+```{r}
+naive_model <- naiveBayes(as.factor(train$host_is_superhost)~.,data = train1)
+naive_model
+naivepred <-predict(naive_model,test1$host_is_superhost)
+```
+
+```{r}
+###### Evaluating model: 88% Accuracy
+mmetric(as.factor(test1$host_is_superhost), naivepred, c("ACC"))
+
+```
+
+#Listings within 1 mile of Northeastern University
+
+```{r}
+#Creating an empty data frame
+zz <- data.frame()
+
+#For loop to calculate distance from each point to Northeastern University
+for(i in 1:length(airbnb$latitude)){
+xx <- distm(c(42.33666532,-71.08749965), c(airbnb$latitude[i],airbnb$longitude[i]), fun = distHaversine)
+zz <- append(zz,xx)
+}
+
+#Merging the two dataframes
+zz1 <- data.frame((unlist(zz)))
+df <- cbind(airbnb,zz1)
+colnames(df)[43] <- "near"
+
+#Filtering the dataframe to get listings within 1 mile
+df$near <- as.numeric(df$near)
+library(tidyverse)
+df1 <- df %>%
+  filter(near <= 1000)
+
+#Creating Maps
+mapdata<- as.data.frame(cbind(df1$longitude,df1$latitude,df1$price,df1$cancellation_policy))
+#Boston Map (with specific coordinates)
+map <- get_map(location =c(lon = -71.09, lat = 42.335),source = "google",zoom = 14,maptype = "terrain")
+#Coordinates for Northeastern University
+lati <- as.numeric("42.33666532")
+longi <- as.numeric("-71.08749965")
+
+#Creating Maps using ggmap
+mymap <- ggmap(map)+
+  geom_point(aes(x=df1$longitude,y=df1$latitude),data = mapdata) +
+  geom_point(aes(x = longi,y =lati),color = "blue", alpha = 0.8,size = 5)
+
+#Plotting MAp
+mymap
+
+```
+
+#Sentiment Analysis with Reviews dataset
+
+#Note:
+#The below code take 1 hour to run since there are many records
+
+```{r}
+#Dataset
+df2 <- read.csv("D:\\Desktop\\as\\Data Mining\\reviews.csv")
+
+#Converting the comments to character
+df2$comments <- as.character(df2$comments)
+
+#For loop to iterate thorugh each review
+for (i in 1:68275) {
+  a <- data.frame()
+  a <- get_sentences(df2$comments[i])
+  b <- sentiment(a)
+  df2$score[i] <- round(sum(b$sentiment),4)
+  remove(b)
+  remove(a)
+}
+
+
+
+#Grouping by listing id's and taking average of sentiment scores
+df3 <- df2 %>%
+  group_by(listing_id) %>%
+  summarise(count = n(), range = mean(score))
+
+```
+
+```{r}
+#Classifying the avergaes scores as positive, neutral or negative
+df3 <- df3 %>% mutate(category=cut(range, breaks=c(-Inf, -0.00001,0.00001, Inf), labels=c("Negative","Nuetral","Positive")))
+```
+
+
+```{r}
+#Bar chart of the total number of categories
+df3 %>%
+  group_by(category) %>%
+  summarise(total = n()) %>%
+  ggplot() + geom_col(mapping = aes(x = `category`, y = `total`, color = `category`))
+```
+
+#Sentiment Analysis with Word Cloud
+
+```{r}
+
+
+#Cleaning the data (removing stop words)
+Reviews<-Corpus(VectorSource(df2$comments))
+Reviews_clean<-tm_map(Reviews, PlainTextDocument)
+Reviews_clean<-tm_map(Reviews,tolower)
+Reviews_clean<-tm_map(Reviews_clean,removeNumbers)
+Reviews_clean<-tm_map(Reviews_clean,removeWords,stopwords("english"))
+Reviews_clean<-tm_map(Reviews_clean,removePunctuation)
+Reviews_clean<-tm_map(Reviews_clean,stripWhitespace)
+Reviews_clean<-tm_map(Reviews_clean,stemDocument)
+
+#Generating Word cloud
+
+wordcloud(words = Reviews_clean, min.freq = 1,
+          max.words=100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(10, "Dark2"))
+```
+
