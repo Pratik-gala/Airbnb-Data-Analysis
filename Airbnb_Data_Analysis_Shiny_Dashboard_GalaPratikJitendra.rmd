@@ -1,0 +1,111 @@
+---
+title: "Untitled"
+author: "Pratik Gala"
+date: "14 May 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+##Installing the packages
+#install.packages("ggmap")
+#install.packages("maps")
+#install.packages("tidyverse")
+#install.packages("ggplot2")
+#install.packages("tidyverse")
+#install.packages("shiny")
+
+#Initializing the libraries
+library(shiny)
+library(tidyverse)
+library(ggmap)
+library(maps)
+library(ggplot2)
+
+#Loading the Dataset
+airbnb_df<-read.csv("listings_final.csv",header = T, na.strings = c("",NA))
+airbnb_df <- as.data.frame(airbnb_df)
+
+#Data Preprocessing:
+#str(airbnb)
+
+airbnb_df$price <- as.numeric(airbnb_df$price)
+
+colSums(is.na(airbnb_df))
+
+#The following columns will be removed because they had two many missing values :
+#Reviews per month : 756 missing values
+#Reviews scores location :822 missing values
+#Last reviews : 756 missing values
+#First reviews : 756 
+#Reviews scores values :821
+
+airbnb_df$reviews_per_month <- NULL
+airbnb_df$review_scores_location <- NULL
+airbnb_df$last_review <- NULL
+airbnb_df$first_review <- NULL
+airbnb_df$review_scores_value <- NULL
+
+#Impute remaining missing values for variables of interest :
+airbnb_df$bedrooms[is.na(airbnb_df$bedrooms)] <- round(mean(airbnb_df$bedrooms, na.rm = TRUE))
+airbnb_df$bathrooms[is.na(airbnb_df$bathrooms)] <- round(mean(airbnb_df$bathrooms, na.rm = TRUE))
+airbnb_df$beds[is.na(airbnb_df$beds)] <- round(mean(airbnb_df$beds, na.rm = TRUE))
+
+
+
+# DEFINE UI FUNCTION #######################################
+
+
+ui <- fluidPage(
+  titlePanel("Airbnb"),
+  sidebarLayout(
+    sidebarPanel(
+      # Dropdown menu for selecting variable from sracth data.
+     sliderInput("Price",
+                  label = "Select the maximum Price",
+                 min = 0, max = 2000,step = 100, value = 200),  # Default selection
+     sliderInput("Bathrooms",
+                  label = "Select the number of Bathrooms",
+                 min = 0, max = 6,step = 0.5, value = 1),  # Default selection 
+    radioButtons("Cancellation", label = "Cancellation Policy",
+      choices = list("strict" = "strict", "super strict" = "super_strict_30", "moderate" = "moderate", "flexible" = "flexible"), 
+       selected = "moderate"),
+     radioButtons("Bedrooms", label = "Number of Bedrooms",
+      choices = list("1 Bedroom" = 1, "2 Bedrooms" = 2, "3 Bedrooms" = 3, "4 Bedrooms" = 4, "5 Bedrooms" = 5), 
+       selected = 1)),    
+    mainPanel(
+      plotOutput("ScratchPlot")  
+    )
+  )
+ )
+
+
+# DEFINE SERVER FUNCTION ###################################
+
+server <- function(input, output) {
+  # Define histogram output
+  
+  output$ScratchPlot <- renderPlot({  
+
+  mapdat <- airbnb_df %>%
+  select(id,latitude,longitude,price,bedrooms,bathrooms,cancellation_policy) %>%
+  filter(bedrooms == input$Bedrooms, price <= input$Price,bathrooms == input$Bathrooms,cancellation_policy == input$Cancellation)
+#map <- get_map(location = "boston,Massachusetts",source = "google",zoom = 10,maptype = "terrain")
+map <- get_map(location =c(lon = -71.1, lat = 42.325),source = "google",zoom = 12,maptype = "terrain")
+mymap <- ggmap(map)+geom_point(aes(x=longitude,y=latitude),data = mapdat)
+mymap
+ 
+  }, height = 600, width = 800)
+}
+
+# CALL THE SHINY APP #######################################
+
+shinyApp(ui = ui, server = server)
+
+
+
+```
+
